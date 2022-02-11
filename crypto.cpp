@@ -1,82 +1,111 @@
 #include "crypto.hpp"
+HMAC_CTX* ctx1=HMAC_CTX_new();
+BN_CTX* ctx2 = BN_CTX_new();
 
-#ifndef _ALGO_HMAC_H_
-#define _ALGO_HMAC_H_
-#endif
-
-#define BLOCK_SIZE 16
-
-uint8_t* prf_512(uint8_t* key, char* msg){
+void prf_512(uint8_t* key, char* msg, uint8_t* output){
     const EVP_MD* engine = EVP_sha512();
-    unsigned char* output = (unsigned char*)malloc(EVP_MAX_MD_SIZE);
-
-    HMAC_CTX* ctx=HMAC_CTX_new();
-    HMAC_CTX_reset(ctx);
-    HMAC_Init_ex(ctx, key, strlen((char*)key), engine, NULL);
-    HMAC_Update(ctx, (unsigned char*)msg, strlen(msg));        // input is OK; &input is WRONG !!!
+    HMAC_Init_ex(ctx1, key, strlen((char*)key), engine, NULL);
+    HMAC_Update(ctx1, (uint8_t*)msg, strlen(msg));        // input is OK; &input is WRONG !!!
     
     unsigned int len = 512;
-    HMAC_Final(ctx, output, &len);
-    HMAC_CTX_free(ctx);
-
-    return output;
+    HMAC_Final(ctx1, output, &len);
 }
-uint8_t* prf_256(uint8_t* key, char* msg){
-    const EVP_MD* engine = EVP_sha512();
-    unsigned char* output = (unsigned char*)malloc(EVP_MAX_MD_SIZE);
 
-    HMAC_CTX* ctx=HMAC_CTX_new();
-    HMAC_CTX_reset(ctx);
-    HMAC_Init_ex(ctx, key, strlen((char*)key), engine, NULL);
-    HMAC_Update(ctx, (unsigned char*)msg, strlen(msg));        // input is OK; &input is WRONG !!!
+void prf_256(uint8_t* key, char* msg, uint8_t* output) {
+	const EVP_MD* engine = EVP_sha256();
+	HMAC_Init_ex(ctx1, key, strlen((char*)key), engine, NULL);
+	HMAC_Update(ctx1, (uint8_t*)msg, strlen(msg));        // input is OK; &input is WRONG !!!
 
-    unsigned int len = 256;
-    HMAC_Final(ctx, output, &len);
-    HMAC_CTX_free(ctx);
+	unsigned int len = 256;
+	HMAC_Final(ctx1, output, &len);
+}
 
-    return output;
-}
-int bytesToInt(uint8_t* bytes){
-    // 位操作时 使用一个unsigned int变量来作为位容器。
-    int addr = bytes[0] & 0xFF;
-    addr |= ((bytes[1] << 8) & 0xFF00);
-    addr |= ((bytes[2] << 16) & 0xFF0000);
-    addr |= ((bytes[3] << 24) & 0xFF000000);
-    return addr;
-}
-void intToByte(int i, uint8_t* bytes){
-   size_t length = sizeof(int);
-	// 初始化数组
-    memset(bytes, 0, sizeof(uint8_t) * length);
-    bytes[0] = (byte)(0xff & i);
-    bytes[1] = (byte)((0xff00 & i) >> 8);
-    bytes[2] = (byte)((0xff0000 & i) >> 16);
-    bytes[3] = (byte)((0xff000000 & i) >> 24);
-    return;
-}
-int fastPow(int a, int b,int p){
-	int ans=1;
-	while (a&&b)
-	{
-		if (b & 1) ans = ((ans*a) % p) % p;
-		a = (a*a) % p;
-		b >>= 1; //移位运算，右移一位
+int encrypt(unsigned char *inString, int inLen, unsigned char *aes_keybuf, unsigned char *enString){
+	std::cout << inString << std::endl;
+	int i, j, len, nLoop, nRes;
+	unsigned char buf[16];
+	unsigned char buf2[16];
+	AES_KEY aeskey;
+
+	memset(aes_keybuf, 0x90, 32); int pwdLen = 32;
+	if (pwdLen < 32) { len = pwdLen; }
+	else { len = 32; }
+
+	nLoop = inLen / 16; nRes = inLen % 16;
+
+	AES_set_encrypt_key(aes_keybuf, 256, &aeskey);
+	for (i = 0; i < nLoop; i++) {
+		memset(buf, 0, 16);
+		for (j = 0; j < 16; j++) buf[j] = inString[i * 16 + j];
+		AES_encrypt(buf, buf2, &aeskey);
+		for (j = 0; j < 16; j++) {
+			enString[i * 16 + j] = buf2[j];
+		}
 	}
-	return ans;
+	if (nRes > 0) {
+		memset(buf, 0, 16);
+		for (j = 0; j < nRes; j++) buf[j] = inString[i * 16 + j];
+		AES_encrypt(buf, buf2, &aeskey);
+		for (j = 0; j < 16; j++) {
+			enString[i * 16 + j] = buf2[j];
+		}
+	}
+	enString[i * 16 + j] = 0;
+	return 0;
 }
+int decrypt(unsigned char *inString, int inLen, unsigned char *passwd, unsigned char *deString){
+	int i, j, len = 32, nLoop, nRes;
+	unsigned char buf[16];
+	unsigned char buf2[16];
+	unsigned char aes_keybuf[32];
+	AES_KEY aeskey;
 
-
+	memset(aes_keybuf, 0x90, 32);
+	for (i = 0; i < len; i++) aes_keybuf[i] = passwd[i];
+	// �����ֽڴ������16�ֽڵĿ�		
+	nLoop = inLen / 16; nRes = inLen % 16;
+	AES_set_decrypt_key(aes_keybuf, 256, &aeskey);
+	for (i = 0; i < nLoop; i++) {
+		memset(buf, 0, 16);
+		for (j = 0; j < 16; j++) buf[j] = inString[i * 16 + j];
+		AES_decrypt(buf, buf2, &aeskey);
+		for (j = 0; j < 16; j++) {
+			deString[i * 16 + j] = buf2[j];
+		}
+	}
+	if (nRes > 0) {
+		memset(buf, 0, 16);
+		for (j = 0; j < 16; j++) buf[j] = inString[i * 16 + j];
+		AES_decrypt(buf, buf2, &aeskey);
+		for (j = 0; j < 16; j++) {
+			deString[i * 16 + j] = buf2[j];
+		}
+	}
+	deString[i * 16 + nRes] = 0;
+	return 0;
+}
 BIGNUM* Group::genRandom(uint8_t* key, char* msg){
-    BIGNUM* a;
-    uint8_t* randomm = prf_512(key, msg);
-    BN_hex2bn(&a, (char*)randomm);
-    return a;
+    BIGNUM* a = BN_new();
+	uint8_t* randomm = (uint8_t*)calloc(512 / 8, sizeof(uint8_t*));
+	prf_512(key, msg, randomm);
+    BN_bin2bn(randomm, 3, a);
+	BIGNUM* ret = BN_new();
+	BN_nnmod(ret, a, this->q, ctx2);
+	free(randomm);
+    return ret;
 }
 BIGNUM* Group::genPrivKey(uint8_t* key, char* msg){
     return genRandom(key, msg);
 }
 BIGNUM* Group::genPubKey(BIGNUM* privKey){
-    BIGNUM* r;
-    //BN_mod_exp(r, (this->Dfh)->params.g, privKey, this->Dfh->params.p, NULL);
+    BIGNUM* r = BN_new();
+    if(!BN_mod_exp(r, this->g, privKey, this->p, ctx2))
+		return NULL;
     return r;
 }	
+BIGNUM* Group::genSecret(BIGNUM* otherkey, BIGNUM* privkey) {
+	BIGNUM* r = BN_new();
+	if(!BN_mod_exp(r, otherkey, privkey, this->p, ctx2)) 
+		return NULL;
+	return r;
+}
