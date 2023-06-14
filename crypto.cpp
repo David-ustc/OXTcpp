@@ -62,6 +62,7 @@ int fastPow(int a, int b,int p){
 		a = (a*a) % p;
 		b >>= 1; //移位运算，右移一位
 	}
+	printf("%d",b);
 	return ans;
 }
 
